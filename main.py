@@ -1,0 +1,1 @@
+print('Starting Python-Feature-Flag-Service service...')\n
