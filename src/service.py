@@ -8,7 +8,6 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Sky Feature Flags", version="1.0.0")
-flags_db: dict[str, "FeatureFlag"] = {}
 FLAG_NAME_MAX_LENGTH: Final = 128
 MAX_ALLOWLIST_USERS: Final = 1000
 
@@ -29,6 +28,9 @@ class FeatureFlag(BaseModel):
 class FlagUpdate(BaseModel):
     description: str | None = Field(default=None, min_length=1, max_length=500)
     rule: FlagRule | None = None
+
+
+flags_db: dict[str, FeatureFlag] = {}
 
 
 @app.get("/health")
