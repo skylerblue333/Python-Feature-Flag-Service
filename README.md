@@ -1,44 +1,70 @@
-<!-- PORTFOLIO PROJECT PROFILE: maintained by the repository owner -->
+# Sky Feature Flags
 
-## Project profile and code-audit snapshot
+A focused Python/FastAPI feature-flag service for deterministic local evaluation. The repository is an engineering-beta component, not a hosted control plane or production feature-management platform.
 
-**What this is:** **Python-Feature-Flag-Service** is a public repository described as: “Enterprise-grade feature flag service implementation in Python. #SkyCoin4444 #AI #Blockchain #DevOps #Innovation” Its dominant language signals are **Python (5 files)**.
+## Implemented behavior
 
-**Why it has value:** Its value is best understood through the implementation evidence currently present in the repository: **19 tracked files** were observed in the shallow audit, with the source structure and existing documentation providing the project’s specific context. This README does not treat a prototype, experiment, or archive as a production system without supporting evidence.
+- Create, list, read, update, and delete named flags.
+- Global enable/disable switch per flag.
+- Deterministic percentage rollout based on SHA-256 of flag name and user ID.
+- Explicit per-user allowlist that takes precedence over percentage rollout.
+- Validation for flag names, descriptions, rollout percentages, and bounded allowlist size.
+- `/health` and `/ready` operational endpoints.
+- Conservative evaluation behavior: unknown flags evaluate disabled rather than enabled.
+- Non-root container image.
 
-**Implementation evidence:** 2 test-related file(s) detected; 2 dependency or package manifest(s) detected; 2 build/CI/infrastructure signal(s) detected; and 3 documentation or governance file(s) detected. Test filenames observed include `tests/test_main.py`, `tests/test_service.py`. Dependency or package files include `package.json`, `requirements.txt`. Build, CI, or infrastructure signals include `Dockerfile`, `.github/workflows/ci.yml`.
+All state is currently process-local memory. Restarting the service clears flags.
 
-**Current status:** The repository is tracked on the `main` branch. The existing source tree, configuration, tests, workflows, and documentation remain authoritative for supported behavior and maturity. A code audit is not a production-readiness certification, and the presence of a test or workflow file does not establish that all checks pass.
+## Run locally
 
-**Relationship to the wider portfolio:** This repository is one focused component of the broader Skyler Blue Spillers portfolio across AI, software engineering, cloud and DevOps, cybersecurity, blockchain, finance, education, social systems, and creative work. It may provide a service boundary, implementation pattern, experiment, archive, or reusable idea for related repositories. Treat repositories as technical dependencies only where documented interfaces and verified project requirements support that relationship.
+```bash
+python -m pip install -r requirements.txt
+uvicorn src.service:app --host 127.0.0.1 --port 8000
+```
 
-**Quality and security note:** No obvious secret-like pattern was detected by the limited static scan; this is not a substitute for a security audit. No TODO/FIXME marker was detected in the scanned text files.
+Example flag:
 
----
+```json
+{
+  "name": "new_checkout",
+  "description": "Gradual checkout rollout",
+  "rule": {
+    "enabled": true,
+    "percentage": 25,
+    "user_ids": ["internal-user"]
+  }
+}
+```
 
-# Python Feature Flag Service
+Evaluate it with `GET /evaluate/new_checkout/<user-id>`.
 
-![GitHub stars](https://img.shields.io/github/stars/skylerblue333/Python-Feature-Flag-Service?style=flat-square)
-![GitHub license](https://img.shields.io/github/license/skylerblue333/Python-Feature-Flag-Service?style=flat-square)
+## Verification
 
-## 🌟 Overview
-**Python-Feature-Flag-Service** is a professional-grade project within the **SkyCoin4444** ecosystem. It focuses on delivering high-value solutions in the domain of **Python**.
+CI requires Python compilation, Ruff, pytest, dependency auditing, container build, and a non-root runtime check.
 
-## 🚀 Key Features
-- **Scalable Architecture**: Designed for enterprise-level growth and performance.
-- **Modern Standards**: Implements best practices for clean code and maintainability.
-- **Robust Integration**: Built to work seamlessly within modern cloud-native environments.
+Local checks:
 
-## 🛠️ Technology Stack
-- **Primary Domain**: Python
-- **Ecosystem**: SkyCoin4444 Digital Platform
+```bash
+python -m compileall -q src tests
+ruff check src tests
+pytest -q
+pip-audit -r requirements.txt
+docker build -t sky-feature-flags .
+docker run --rm --entrypoint id sky-feature-flags -u
+```
 
-## 📂 Structure
-The project is organized into a modular structure to ensure clarity and ease of development.
+## Architecture
 
-## 👨‍💻 Author
-**Skyler Blue Spillers**
-*Professional Chess Player & Software Engineer*
+The HTTP layer and evaluation logic live in `src/service.py`. Flag definitions are validated with Pydantic. Percentage assignment is deterministic and requires no external randomness or network dependency. This makes the current component useful for local services and integration experiments while keeping its operational boundary explicit.
 
----
-*Powered by SkyCoin4444*
+## SKYCOIN4444 integration
+
+A SKYCOIN4444 service can consume this component through its HTTP API rather than copying the implementation. Suitable uses include controlled rollout of UI, API, feed, marketplace, or experimental features. A production integration should add durable storage, authentication/authorization, audit history, tenant isolation, caching strategy, and rollout governance before relying on it for high-impact controls.
+
+## Status and limitations
+
+**Status: Engineering Beta.** Implementation and automated verification are being hardened, but deployment is not verified.
+
+This repository does **not** currently provide durable persistence, distributed consistency, multi-region replication, RBAC, tenant isolation, signed configuration, approval workflows, audit-log durability, SDKs, streaming updates, or a production deployment. It should not be described as GA, enterprise-ready, or production-ready without evidence for those capabilities.
+
+See `SECURITY.md` for security boundaries and `CHANGELOG.md` for productization history.
