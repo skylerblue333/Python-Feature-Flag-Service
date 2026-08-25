@@ -7,15 +7,16 @@ from typing import Final
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Feature Flag Service", version="1.0.0")
+app = FastAPI(title="Sky Feature Flags", version="1.0.0")
 flags_db: dict[str, "FeatureFlag"] = {}
 FLAG_NAME_MAX_LENGTH: Final = 128
+MAX_ALLOWLIST_USERS: Final = 1000
 
 
 class FlagRule(BaseModel):
     enabled: bool
     percentage: int = Field(default=100, ge=0, le=100)
-    user_ids: list[str] = Field(default_factory=list)
+    user_ids: list[str] = Field(default_factory=list, max_length=MAX_ALLOWLIST_USERS)
 
 
 class FeatureFlag(BaseModel):
@@ -23,6 +24,21 @@ class FeatureFlag(BaseModel):
     description: str = Field(min_length=1, max_length=500)
     rule: FlagRule
     updated_at: float = 0.0
+
+
+class FlagUpdate(BaseModel):
+    description: str | None = Field(default=None, min_length=1, max_length=500)
+    rule: FlagRule | None = None
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready() -> dict[str, bool]:
+    return {"ready": True}
 
 
 @app.post("/flags", status_code=201)
@@ -34,11 +50,36 @@ def create_flag(flag: FeatureFlag) -> FeatureFlag:
     return stored
 
 
+@app.get("/flags")
+def list_flags() -> list[FeatureFlag]:
+    return [flags_db[name] for name in sorted(flags_db)]
+
+
 @app.get("/flags/{name}")
 def get_flag(name: str) -> FeatureFlag:
-    if name not in flags_db:
+    flag = flags_db.get(name)
+    if flag is None:
         raise HTTPException(status_code=404, detail="Flag not found")
-    return flags_db[name]
+    return flag
+
+
+@app.patch("/flags/{name}")
+def update_flag(name: str, update: FlagUpdate) -> FeatureFlag:
+    current = flags_db.get(name)
+    if current is None:
+        raise HTTPException(status_code=404, detail="Flag not found")
+    changes = update.model_dump(exclude_none=True)
+    if "rule" in changes:
+        changes["rule"] = FlagRule.model_validate(changes["rule"])
+    stored = current.model_copy(update={**changes, "updated_at": time()})
+    flags_db[name] = stored
+    return stored
+
+
+@app.delete("/flags/{name}", status_code=204)
+def delete_flag(name: str) -> None:
+    if flags_db.pop(name, None) is None:
+        raise HTTPException(status_code=404, detail="Flag not found")
 
 
 @app.get("/evaluate/{name}/{user_id}")
@@ -52,4 +93,8 @@ def evaluate_flag(name: str, user_id: str) -> dict[str, bool | str]:
     if user_id in rule.user_ids:
         return {"enabled": True, "reason": "user_allowlist"}
     bucket = int.from_bytes(sha256(f"{name}:{user_id}".encode()).digest()[:4], "big") % 100
-    return {"enabled": bucket < rule.percentage, "reason": "percentage_rollout" if bucket < rule.percentage else "percentage_miss"}
+    enabled = bucket < rule.percentage
+    return {
+        "enabled": enabled,
+        "reason": "percentage_rollout" if enabled else "percentage_miss",
+    }
